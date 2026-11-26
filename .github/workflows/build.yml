@@ -1,0 +1,137 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install -r requirements.txt pyinstaller
+
+      - name: Build GUI exe
+        run: >
+          pyinstaller --noconfirm --onefile --windowed --name Xpl0it00ls
+          --paths src --collect-all pymobiledevice3
+          --exclude-module textual --exclude-module rich
+          run.py
+
+      - name: Build TUI exe
+        run: >
+          pyinstaller --noconfirm --onefile --console --name Xpl0it00ls-TUI
+          --paths src --collect-all pymobiledevice3 --collect-all textual
+          --exclude-module PySide6
+          run_tui.py
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Xpl0it00ls-windows
+          path: |
+            dist/Xpl0it00ls.exe
+            dist/Xpl0it00ls-TUI.exe
+
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y libfuse2 libxcb-cursor0 libxkbcommon-x11-0 libegl1 libgl1
+          pip install -r requirements.txt pyinstaller pillow
+          wget -q https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool-x86_64.AppImage
+
+      - name: Make placeholder icon
+        run: |
+          python - <<'PY'
+          from PIL import Image, ImageDraw
+          im = Image.new("RGBA", (256, 256), (30, 90, 200, 255))
+          ImageDraw.Draw(im).text((90, 110), "VT", fill="white")
+          im.save("xpl0it00ls.png")
+          PY
+
+      - name: Build GUI AppImage
+        run: >
+          pyinstaller --noconfirm --onedir --windowed --name xpl0it00ls
+          --paths src --collect-all pymobiledevice3
+          --exclude-module textual --exclude-module rich
+          run.py
+      - run: |
+          mkdir -p AppDir-gui/usr/bin
+          cp -r dist/xpl0it00ls/* AppDir-gui/usr/bin/
+          cp xpl0it00ls.png AppDir-gui/xpl0it00ls.png
+          cat > AppDir-gui/xpl0it00ls.desktop <<'DESK'
+          [Desktop Entry]
+          Type=Application
+          Name=Xpl0it00ls
+          Exec=xpl0it00ls
+          Icon=xpl0it00ls
+          Categories=Utility;
+          DESK
+          printf '#!/bin/sh\nHERE="$(dirname "$(readlink -f "$0")")"\nexec "$HERE/usr/bin/xpl0it00ls" "$@"\n' > AppDir-gui/AppRun
+          chmod +x AppDir-gui/AppRun
+          ARCH=x86_64 ./appimagetool-x86_64.AppImage --appimage-extract-and-run AppDir-gui Xpl0it00ls-x86_64.AppImage
+          rm -rf dist build
+
+      - name: Build TUI AppImage
+        run: >
+          pyinstaller --noconfirm --onedir --console --name xpl0it00ls-tui
+          --paths src --collect-all pymobiledevice3 --collect-all textual
+          --exclude-module PySide6
+          run_tui.py
+      - run: |
+          mkdir -p AppDir-tui/usr/bin
+          cp -r dist/xpl0it00ls-tui/* AppDir-tui/usr/bin/
+          cp xpl0it00ls.png AppDir-tui/xpl0it00ls.png
+          cat > AppDir-tui/xpl0it00ls-tui.desktop <<'DESK'
+          [Desktop Entry]
+          Type=Application
+          Name=Xpl0it00ls TUI
+          Exec=xpl0it00ls-tui
+          Icon=xpl0it00ls
+          Terminal=true
+          Categories=Utility;
+          DESK
+          printf '#!/bin/sh\nHERE="$(dirname "$(readlink -f "$0")")"\nexec "$HERE/usr/bin/xpl0it00ls-tui" "$@"\n' > AppDir-tui/AppRun
+          chmod +x AppDir-tui/AppRun
+          ARCH=x86_64 ./appimagetool-x86_64.AppImage --appimage-extract-and-run AppDir-tui Xpl0it00ls-TUI-x86_64.AppImage
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Xpl0it00ls-linux
+          path: |
+            Xpl0it00ls-x86_64.AppImage
+            Xpl0it00ls-TUI-x86_64.AppImage
+
+  release:
+    needs: [windows, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: out, merge-multiple: true }
+      - name: Tag name
+        id: tag
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then echo "name=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+          else echo "name=nightly" >> $GITHUB_OUTPUT; fi
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.name }}
+          name: Xpl0it00ls ${{ steps.tag.outputs.name }}
+          prerelease: ${{ steps.tag.outputs.name == 'nightly' }}
+          files: |
+            out/Xpl0it00ls.exe
+            out/Xpl0it00ls-TUI.exe
+            out/Xpl0it00ls-x86_64.AppImage
+            out/Xpl0it00ls-TUI-x86_64.AppImage
