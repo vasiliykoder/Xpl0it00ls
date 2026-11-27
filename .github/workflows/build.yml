@@ -18,11 +18,13 @@ jobs:
         with: { python-version: "3.11" }
       - run: pip install -r requirements.txt pyinstaller
 
+      # ВАЖНО: rich НЕ исключать — pymobiledevice3 импортирует его на уровне модуля
+      # (pymobiledevice3/progress.py), иначе GUI падает с ModuleNotFoundError.
       - name: Build GUI exe
         run: >
           pyinstaller --noconfirm --onefile --windowed --name Xpl0it00ls
           --paths src --collect-all pymobiledevice3
-          --exclude-module textual --exclude-module rich
+          --exclude-module textual
           run.py
 
       - name: Build TUI exe
@@ -61,11 +63,12 @@ jobs:
           im.save("xpl0it00ls.png")
           PY
 
+      # ВАЖНО: rich НЕ исключать — pymobiledevice3 импортирует его на уровне модуля.
       - name: Build GUI AppImage
         run: >
           pyinstaller --noconfirm --onedir --windowed --name xpl0it00ls
           --paths src --collect-all pymobiledevice3
-          --exclude-module textual --exclude-module rich
+          --exclude-module textual
           run.py
       - run: |
           mkdir -p AppDir-gui/usr/bin
